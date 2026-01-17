@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SparkPoint</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <div class="logo">⚡ SparkPoint</div>
+            <div class="wallet-section">
+                <span id="wallet">Не подключен</span>
+                <button id="connect" class="btn-gold">Подключить</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main">
+        <div class="sidebar">
+            <div class="card">
+                <h3>👤 Профиль</h3>
+                <div id="profile">
+                    <p>Подключите кошелёк</p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>💰 Баланс</h3>
+                <div class="balance">
+                    <h2 id="balance">0 BNB</h2>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📊 Уровень</h3>
+                <div class="level">
+                    <span id="level" class="level-badge">0</span>
+                    <div class="progress">
+                        <div id="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="card">
+                <h3>🔗 Реферальная ссылка</h3>
+                <div class="referral">
+                    <input type="text" id="ref-link" readonly>
+                    <button onclick="copyLink()" class="btn-gold">Копировать</button>
+                </div>
+                <small>Отправьте эту ссылку друзьям</small>
+            </div>
+
+            <div class="card" id="register-card">
+                <h3>📝 Регистрация</h3>
+                <input type="text" id="upline" placeholder="Адрес пригласителя">
+                <button onclick="register()" class="btn-green">Зарегистрироваться (0.1 BNB)</button>
+            </div>
+
+            <div class="card" id="stats-card">
+                <h3>📈 Статистика</h3>
+                <div class="stats">
+                    <div class="stat">
+                        <h4 id="refs">0</h4>
+                        <p>Рефералы</p>
+                    </div>
+                    <div class="stat">
+                        <h4 id="team">0</h4>
+                        <p>Команда</p>
+                    </div>
+                    <div class="stat">
+                        <h4 id="earned">0</h4>
+                        <p>Заработано</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card admin-card" id="admin-panel">
+                <h3>⚙️ Админ</h3>
+                <input type="text" id="new-user" placeholder="Новый пользователь">
+                <input type="text" id="new-upline" placeholder="Пригласитель">
+                <button onclick="addFree()" class="btn-green">Добавить бесплатно</button>
+                <input type="number" id="new-fee" placeholder="Новая комиссия">
+                <button onclick="changeFee()" class="btn-red">Изменить комиссию</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.7.0/dist/web3.min.js"></script>
+    <script>
+        let web3, contract, user;
+        const CONTRACT_ADDRESS = "ВАШ_АДРЕС_КОНТРАКТА";
+        const CONTRACT_ABI = [ /* Вставьте ABI сюда */ ];
+        
+        async function connectWallet() {
+            if(window.ethereum) {
+                web3 = new Web3(window.ethereum);
+                await ethereum.request({method: 'eth_requestAccounts'});
+                const accounts = await web3.eth.getAccounts();
+                user = accounts[0];
+                document.getElementById('wallet').textContent = user.slice(0,6)+'...'+user.slice(-4);
+                contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+                loadData();
+            } else {
+                alert("Установите MetaMask");
+            }
+        }
+        
+        async function loadData() {
+            const userData = await contract.methods.users(user).call();
+            
+            if(userData.active) {
+                document.getElementById('profile').innerHTML = `
+                    <p><strong>Уровень:</strong> ${userData.level}</p>
+                    <p><strong>Пригласитель:</strong> ${userData.upline.slice(0,6)}...</p>
+                `;
+                document.getElementById('balance').textContent = 
+                    web3.utils.fromWei(userData.balance, 'ether') + ' BNB';
+                document.getElementById('level').textContent = userData.level;
+                document.getElementById('refs').textContent = userData.referrals;
+                document.getElementById('team').textContent = userData.totalTeam;
+                document.getElementById('earned').textContent = 
+                    web3.utils.fromWei(userData.balance, 'ether') + ' BNB';
+                
+                document.getElementById('register-card').style.display = 'none';
+                document.getElementById('stats-card').style.display = 'block';
+                
+                const admin = await contract.methods.admin().call();
+                if(user.toLowerCase() === admin.toLowerCase()) {
+                    document.getElementById('admin-panel').style.display = 'block';
+                }
+                
+                updateProgress(userData.level, userData.totalTeam);
+            } else {
+                document.getElementById('profile').innerHTML = '<p>Не зарегистрирован</p>';
+                document.getElementById('register-card').style.display = 'block';
+                document.getElementById('stats-card').style.display = 'none';
+            }
+            
+            updateReferralLink();
+        }
+        
+        function updateProgress(level, team) {
+            const requirements = [0,2,6,14,30,62,2,6,14,30,62];
+            const req = requirements[level] || 0;
+            const progress = req > 0 ? Math.min((team / req) * 100, 100) : 0;
+            document.getElementById('progress-bar').style.width = progress + '%';
+        }
+        
+        function updateReferralLink() {
+            const link = window.location.origin + '?ref=' + user;
+            document.getElementById('ref-link').value = link;
+        }
+        
+        function copyLink() {
+            const link = document.getElementById('ref-link');
+            link.select();
+            document.execCommand('copy');
+            alert('Скопировано!');
+        }
+        
+        async function register() {
+            const upline = document.getElementById('upline').value || await contract.methods.admin().call();
+            const fee = await contract.methods.fee().call();
+            
+            await contract.methods.register(upline).send({
+                from: user,
+                value: fee,
+                gas: 500000
+            });
+            
+            alert('Успешно!');
+            loadData();
+        }
+        
+        async function addFree() {
+            const newUser = document.getElementById('new-user').value;
+            const upline = document.getElementById('new-upline').value;
+            
+            await contract.methods.addFree(newUser, upline).send({from: user});
+            alert('Добавлен!');
+        }
+        
+        async function changeFee() {
+            const newFee = document.getElementById('new-fee').value;
+            const wei = web3.utils.toWei(newFee, 'ether');
+            await contract.methods.setFee(wei).send({from: user});
+            alert('Изменено!');
+        }
+        
+        window.onload = function() {
+            const url = new URL(window.location);
+            const ref = url.searchParams.get('ref');
+            if(ref) {
+                document.getElementById('upline').value = ref;
+            }
+        };
+        
+        document.getElementById('connect').onclick = connectWallet;
+    </script>
+</body>
+</html>
